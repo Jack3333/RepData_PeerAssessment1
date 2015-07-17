@@ -4,7 +4,7 @@ output:
   html_document:
     keep_md: true
 ---
-
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.  
 
 ## Loading and preprocessing the data
 
@@ -18,7 +18,7 @@ ag.tot<-aggregate(data$steps, by=list(data$date), FUN=sum)
 ag.tot[,2]<-as.numeric(ag.tot$x)
 ```
 ## What is mean total number of steps taken per day?
-This calculation is prior to  imputation.
+This calculation excludes missing values.  
 
 ```r
 hist(ag.tot$x, breaks = 15, main = "Histogram of total number of steps per day \n excluding missing values", xlab = "Number of Steps per Day", col = "#FF9966", ylab = "Number of Days")
@@ -36,11 +36,157 @@ Median total number of steps per day(pre-imputation): **10765**
 
 
 ## What is the average daily activity pattern?
+Time series plot by 5-minute interval
 
+
+```r
+ag.int<-aggregate(data$steps, by=list(data$interval), FUN=mean, na.rm = TRUE)
+par("mgp"=c(4,1,0))
+par(mar = c(6.1, 6.1, 4.1, 2))
+par("cex.lab" = .82)
+plot(ag.int$Group.1, ag.int$x, type = "l", main = "Average Number of Steps \n for each Five-Minute Time Interval", xlab= "Five-Minute Time Interval", ylab = "Average Number of Steps", xaxt = "n", cex.axis = .75)
+axis(las=2, cex.axis = .75, side =1, at= c(500, 1000, 1500, 2000), labels = c("5:00 a.m.", "10:00 a.m.", "3:00 p.m.", "8:00 p.m."))
+abline(v=835, h = 206.17, col = "blue")
+```
+
+![plot of chunk diurnal](figure/diurnal-1.png) 
+
+```r
+most.steps<-max(ag.int$x)
+top.int<- ag.int[which.max(ag.int$x), 1]
+```
+The 5-minute interval with the maximum average number of steps  
+was: **835:** **8:35 a.m. to 8:39 a.m.**. The maximum average was 206.17 steps.
 
 
 ## Imputing missing values
 
 
+```r
+miss<-sum(is.na(data$steps))
+```
+There were **2304** missing values for the steps variable.
+
+
+```r
+#Calculation of number of NA intervals for each day
+dat.na<-mutate(data, logic.na=is.na(data$steps))
+dly.na<-aggregate(dat.na$logic.na, by=list(data$date), FUN=sum)
+tab<-table(as.factor(dly.na$x))
+write.table(tab)
+```
+
+```
+## "Var1" "Freq"
+## "1" "0" 53
+## "2" "288" 8
+```
+The NAs were completely clustered by day.  There were 53 days with no NA intervals at all and 8 days with each having all 288 intervals as NA. 
+
+I next tried to reduce NA bias by imputation. The strategy I employed was to replace the missing values with the average of the known values for the given time interval. The replacement values are elements of the *x* vector of *ag.int* above.  The r coding approach is based on an Oct 13, 2014 [StackOverflow](http://stackoverflow.com/questions/26336122/r-replacing-na-values-by-mean-of-hour-with-dplyr?rq=1) suggestion.   
+
+
+```r
+data.imp<-data %>%
+      group_by(interval) %>%
+      mutate(steps= ifelse(is.na(steps), mean(steps, na.rm=TRUE), steps))
+```
+
+
+Make a histogram of the data with the imputed values 
+substituted for the missing values.
+
+
+```r
+ag.tot.imp<-aggregate(data.imp$steps, by=list(data.imp$date), FUN=sum)
+hist(ag.tot.imp$x, breaks = 15, main = "Histogram of total number of steps (with imputation) per day", xlab = "Number of Steps per Day", col = "#009999", ylab = "Number of Days")
+```
+
+![plot of chunk imphistogram](figure/imphistogram-1.png) 
+
+```r
+Mean.imp<-mean(ag.tot.imp$x)
+Median.imp<-median(ag.tot.imp$x)
+```
+
+Mean total number of steps per day (with imputation): **10766.19**  
+Median total number of steps per day(with imputation): **10766.19**   
+
+The mean total number of steps per day with imputation is exactly equal to the mean total number of steps per day excluding unknowns.  
+
+The median total number of steps per day with imputation is 1.19 steps greater than the median total number of steps per day excluding unknowns.   
+
+The mean was certain to remain unchanged given the fact that days were either entirely NA or entirely non-NA and I used an imputation algorithm taken directly from the known values. The 8 imputed days each has a total equal to mean of the known days. The process, by heaping the 8 added cases at the mean, did however distort the shape of the distribution.
+
+
+```r
+library("moments")
+#boxplot comparing distribution
+par(mgp = c(4, 1.5 ,0) )
+par(mar = c(5, 6, 4, 2))
+boxplot(ag.tot$x,ag.tot.imp$x, names = c("no \n imputation", "with \n imputation"), ylab = "Total number of steps per day", col = c("#FF9966","#009999"), main = "Comparison of distrIbutions of total steps \n per day according to imputation status")
+title(cex.lab = 1.5)
+```
+
+![plot of chunk imp2](figure/imp2-1.png) 
+
+```r
+#comparing the interquartile ranges
+IQR(ag.tot$x, na.rm = TRUE)
+```
+
+```
+## [1] 4453
+```
+
+```r
+IQR(ag.tot.imp$x)
+```
+
+```
+## [1] 2992
+```
+The drop in the interquartile range from 4453 before imputation to
+2992 after imputations reflects increased peaking of the distribution.
+
+
+```r
+kurtosis(ag.tot$x, na.rm = TRUE)
+```
+
+```
+## [1] 3.7
+```
+
+```r
+kurtosis(ag.tot.imp$x)
+```
+
+```
+## [1] 4.3
+```
+Similarly, the increase in the kurtosis measure from 3.7 to 4.3 shows that imputation made the distribution more leptokurtic.
+
+Whether the compressed dispersion matters or not depends on how the data are to be used. I personally think the imputation algorithm employed here would be inappropriate under most plausible scenarios. However, there may be regularities in the data that would allow more acceptable  imputation algorithms.  For instance, we will see in the next section that weekend activity patterns differ from weekday patterns.  One would usually impute different values for missing weekend observations than for missing weekdays. It is conceivable that there is some sort of serial correlation over days that would improve the imputations if taken into account. External data such as daily Baltimore temperature and precipitation statistics for the study  period in 2012 might improve the imputation.  Modelling may be worth a try even with this relatively short series.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+
+```r
+data.imp[,2]<-as.Date(data.imp$date)
+day<-weekdays(data.imp$date)
+data.imp.coma<-cbind(data.imp, day)
+data.imp.comb<- mutate(data.imp.coma, wday = ifelse(data.imp.coma$day %in% c("Saturday", "Sunday"), "weekend", "weekday"))
+data.imp.comb[,5]<-as.factor(data.imp.comb$wday)
+data.imp.int<-aggregate(data.imp.comb$steps,by=list(as.factor(data.imp.comb$interval),
+data.imp.comb$wday), FUN=mean)
+ggplot(data.imp.int, aes(x = Group.1, y = data.imp.int$x, group=Group.2))+geom_line()+facet_wrap(~Group.2)+labs(x="Time Interval", y= "Average Number of Steps in 5-minute Interval", title = "Differences in Activity Patterns between Weekdays and Weekends \n employing imputed data")+ scale_x_discrete(breaks=c("600", "1200", "1800"), labels = c("6:00 a.m.", "Noon", "6:00 p.m."))  
+```
+
+![plot of chunk day of week](figure/day of week-1.png) 
+
+
+The imputaton algorithm employed here may well have attenuated the weekend-weekday differences shown above but that is beyond the scope of the present discussion.
+
+The weekend pattern appears to be quite different from the weekday pattern.  The average number of steps between 6:00 a.m. and 7:00 a.m. was appreciably larger on weekdays than on weekends implying a tendency for the subject to remain in bed later on weekends.  However, We should  remember that we are looking at averages, not typical days. We saw earlier that if one pooled the data it showed that the 8:35-8:39 a.m. interval had an average of 206 steps per day.
+Now that we have separated weekdays from weekend days we see the average number of steps for that five-minute interval to have been 230 for weekdays and 138 for weekends. Similarly, 45 weekday step counts for the 8:35-8:39 a.m. time interval were averaged to produce the 230 step figure. On some weekdays the subject may have run 700 or so steps during that five-minute time interval while on other weekdays the subject might have been lying in bed or sitting down at that time. There may have been no single-day's observation particularly close to 230. There is a tendency to look at the "activity patterns" charts and think that the subject walked to work or school every day at about 8:30.  That may not have been the case.
